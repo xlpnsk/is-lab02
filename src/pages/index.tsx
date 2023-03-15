@@ -162,6 +162,17 @@ function validateCell(cell: ICell) {
   }
 }
 
+function validateFileFormat(text: string) {
+  const mappedText = splitDataToLines(text, "\n").map((line) =>
+    splitLine(line.slice(0, line.length - 1), ";")
+  );
+  const correctNumCols = mappedText.reduce(
+    (prev, curr) => prev && curr.length === headers.length,
+    true
+  );
+  if (!correctNumCols) throw new Error("Invalid data format");
+}
+
 export default function Home() {
   const [file, setFile] = React.useState<File>();
   const [tableArray, setTableArray] = React.useState<ICell[][]>([]);
@@ -169,12 +180,17 @@ export default function Home() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const inputFile = e.target.files[0];
-      console.log(e.target.files[0].type);
       if (inputFile.type !== "text/plain") {
         setError("Invalid file type");
       } else {
-        setError(null);
-        setFile(inputFile);
+        inputFile
+          .text()
+          .then((txt) => validateFileFormat(txt))
+          .then(() => {
+            setError(null);
+            setFile(inputFile);
+          })
+          .catch((err) => setError(err.message));
       }
     }
   };
