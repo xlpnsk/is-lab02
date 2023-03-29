@@ -1,197 +1,54 @@
 import Head from "next/head";
-import Image from "next/image";
 import { Roboto } from "next/font/google";
 import styles from "@/styles/Home.module.css";
 import * as React from "react";
-import { spawn } from "child_process";
+import {
+  downloadTxt,
+  joinDataTable,
+  splitDataToLines,
+  splitLine,
+} from "@/utlis/txt";
+import { ICell, IXMLParsedData } from "@/types/globals";
+import { validateCell, validateTxtFileFormat } from "@/utlis/validator";
+import { headers } from "@/utlis/headers";
+import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import { parseXmlToCellData } from "@/utlis/xml";
 
 const roboto = Roboto({
   subsets: ["latin"],
   weight: ["100", "300", "400", "500", "700", "900"],
 });
 
-const splitDataToLines = (data: string, delimeter: string = "\n") => {
-  return data.split(delimeter);
-};
-const splitLine = (line: string, delimeter: string = ";") => {
-  return line.split(delimeter);
-};
-
-function download(filename: string, text: string) {
-  const element = document.createElement("a");
-  element.setAttribute(
-    "href",
-    "data:text/plain;charset=utf-8," + encodeURIComponent(text)
-  );
-  element.setAttribute("download", filename);
-
-  element.style.display = "none";
-  document.body.appendChild(element);
-
-  element.click();
-
-  document.body.removeChild(element);
-}
-
-const headers: ICellDataType[] = [
-  "Producent",
-  "Diagonal",
-  "Resolution",
-  "Surface",
-  "Touchable",
-  "CPU",
-  "Cores",
-  "MHz",
-  "RAM",
-  "Diskspace",
-  "Disktype",
-  "GPU",
-  "GPU Memory",
-  "OS",
-  "Drive",
-];
-
-type ICellDataType =
-  | "Producent"
-  | "Diagonal"
-  | "Resolution"
-  | "Surface"
-  | "Touchable"
-  | "CPU"
-  | "Cores"
-  | "MHz"
-  | "RAM"
-  | "Diskspace"
-  | "Disktype"
-  | "GPU"
-  | "GPU Memory"
-  | "OS"
-  | "Drive";
-
-interface ICell {
-  type: ICellDataType;
-  value: string;
-  error: string | null;
-}
-
-function joinDataTable(dataTable: ICell[][]): string {
-  return dataTable
-    .map((line) => `${line.map((cell) => cell.value).join(";")};`)
-    .join("\n");
-}
-
-function checkEmpty(value: string) {
-  if (value.trim().length === 0) {
-    throw new Error("String cannot be empty");
-  }
-}
-
-function checkIfIn(value: string, possibleValues: string[]) {
-  if (!possibleValues.includes(value)) {
-    throw new Error(`Value not in: ${possibleValues.join(", ")}`);
-  }
-}
-
-function checkIfNumber(value: string) {
-  if (isNaN(parseInt(value))) {
-    throw new Error(`Not a number`);
-  }
-}
-
-function validateCell(cell: ICell) {
-  checkEmpty(cell.value);
-  switch (cell.type) {
-    case "Producent": {
-      break;
-    }
-    case "Diagonal": {
-      if (!/(^\d{2,}"$)/gm.test(cell.value)) {
-        throw new Error("Bad format");
-      }
-      break;
-    }
-    case "Resolution": {
-      if (!/(^\d{3,}x\d{3,}$)/gm.test(cell.value))
-        throw new Error("Bad format");
-      break;
-    }
-    case "Surface": {
-      checkIfIn(cell.value, ["błyszcząca", "matowa"]);
-      break;
-    }
-    case "Touchable": {
-      checkIfIn(cell.value, ["tak", "nie"]);
-      break;
-    }
-    case "CPU": {
-      break;
-    }
-    case "Cores": {
-      checkIfNumber(cell.value);
-      break;
-    }
-    case "MHz": {
-      checkIfNumber(cell.value);
-      break;
-    }
-    case "RAM": {
-      if (!/^\d+(GB|MB|KB)$/gm.test(cell.value)) throw new Error("Bad format");
-      break;
-    }
-    case "Diskspace": {
-      if (!/^\d+(GB|MB|KB)$/gm.test(cell.value)) throw new Error("Bad format");
-      break;
-    }
-    case "Disktype": {
-      checkIfIn(cell.value, ["SSD", "HDD"]);
-      break;
-    }
-    case "GPU": {
-      break;
-    }
-    case "GPU Memory": {
-      if (!/^\d+(GB|MB|KB)$/gm.test(cell.value)) throw new Error("Bad format");
-      break;
-    }
-    case "OS": {
-      break;
-    }
-    case "Drive": {
-      break;
-    }
-  }
-}
-
-function validateFileFormat(text: string) {
-  const mappedText = splitDataToLines(text, "\n").map((line) =>
-    splitLine(line.slice(0, line.length - 1), ";")
-  );
-  const correctNumCols = mappedText.reduce(
-    (prev, curr) => prev && curr.length === headers.length,
-    true
-  );
-  if (!correctNumCols) throw new Error("Invalid data format");
-}
-
 export default function Home() {
   const [file, setFile] = React.useState<File>();
   const [tableArray, setTableArray] = React.useState<ICell[][]>([]);
   const [error, setError] = React.useState<string | null>(null);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const inputFile = e.target.files[0];
-      if (inputFile.type !== "text/plain") {
-        setError("Invalid file type");
-      } else {
-        inputFile
-          .text()
-          .then((txt) => validateFileFormat(txt))
-          .then(() => {
-            setError(null);
-            setFile(inputFile);
-          })
-          .catch((err) => setError(err.message));
-      }
+    if (!e.target.files || e.target.files.length === 0) return;
+    const inputFile = e.target.files[0];
+    if (inputFile.type === "text/plain") {
+      inputFile
+        .text()
+        .then((txt) => validateTxtFileFormat(txt))
+        .then(() => {
+          setError(null);
+          setFile(inputFile);
+        })
+        .catch((err) => setError(err.message));
+    } else if (
+      inputFile.type.includes("application/xml") ||
+      inputFile.type.includes("text/xml")
+    ) {
+      inputFile
+        .text()
+        .then(() => {
+          setError(null);
+          setFile(inputFile);
+        })
+        .catch((err) => setError(err.message));
+    } else {
+      setError("Invalid file type");
     }
   };
 
@@ -210,7 +67,6 @@ export default function Home() {
     } catch (err: any) {
       error = err.message as string;
     }
-    console.log(error);
 
     tableArrayCopy[row][col] = {
       ...tableArray[row][col],
@@ -220,7 +76,7 @@ export default function Home() {
     setTableArray(tableArrayCopy);
   };
 
-  React.useEffect(() => {
+  const parseTxt = () => {
     file
       ?.text()
       .then((txt) => {
@@ -237,7 +93,105 @@ export default function Home() {
         setTableArray(mappedData);
       })
       .catch((err) => console.error(err));
+  };
+
+  const handleXmlRead = async () => {
+    const parser = new XMLParser({ ignoreAttributes: false });
+    const fileContent = await file?.text();
+    if (!fileContent) {
+      setError("Bad data format");
+      return;
+    }
+    const data = parser.parse(fileContent) as IXMLParsedData;
+    setTableArray(parseXmlToCellData(data.laptops.laptop));
+  };
+
+  const handleXmlSave = async (fileName: string) => {
+    const options = {
+      ignoreAttributes: false,
+    };
+
+    const currDate = new Date();
+
+    const dateString = `${currDate.getFullYear()}-${(currDate.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}-${currDate
+      .getDate()
+      .toString()
+      .padStart(2, "0")} T ${currDate
+      .getHours()
+      .toString()
+      .padStart(2, "0")}:${currDate.getMinutes().toString().padStart(2, "0")}`;
+
+    let string = `<laptops moddate="${dateString}">`;
+
+    const builder = new XMLBuilder(options);
+
+    tableArray.forEach((el, i) => {
+      const obj = {
+        laptop: {
+          "@_id": i + 1,
+          manufacturer: el[0].value,
+          screen: {
+            "@_touch": el[4].value === "tak" ? "yes" : "no",
+            size: el[1].value,
+            resolution: el[2].value,
+            type: el[3].value,
+          },
+          processor: {
+            name: el[5].value,
+            physical_cores: el[6].value,
+            clock_speed: el[7].value,
+          },
+          ram: el[8].value,
+          disc: {
+            "@_type": el[10].value,
+            storage: el[9].value,
+          },
+          graphic_card: {
+            name: el[11].value,
+            memory: el[12].value,
+          },
+          os: el[13].value,
+          disc_reader: el[14].value,
+        },
+      };
+
+      const xmlDataStr = builder.build(obj);
+      string += xmlDataStr;
+    });
+
+    string += "</laptops>";
+
+    const anchor = document.createElement("a");
+    const blob = new Blob([string], { type: "text/plain" });
+
+    anchor.setAttribute("href", window.URL.createObjectURL(blob));
+    anchor.setAttribute("download", fileName);
+
+    anchor.dataset.downloadurl = [
+      "text/plain",
+      anchor.download,
+      anchor.href,
+    ].join(":");
+
+    anchor.click();
+  };
+
+  React.useEffect(() => {
+    if (!file) return;
+    if (file?.type.includes("text/plain")) {
+      parseTxt();
+    } else if (
+      file?.type.includes("application/xml") ||
+      file?.type.includes("text/xml")
+    ) {
+      handleXmlRead();
+    } else {
+      setError("Invalid file format");
+    }
   }, [file]);
+
   const anyErrors = tableArray.reduce(
     (prev, curr) =>
       prev || curr.reduce((pr, cr) => pr || cr.error !== null, false),
@@ -247,7 +201,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Lab02</title>
+        <title>Lab03</title>
         <meta name="description" content="Generated by create next app" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
@@ -257,16 +211,18 @@ export default function Home() {
           <div>
             <input type="file" onChange={handleFileChange} />
             {file && !anyErrors && (
-              <button
-                onClick={() =>
-                  download(
-                    `${file?.name.replace(".txt", "")}-export.txt`,
-                    joinDataTable(tableArray)
-                  )
-                }
-              >
-                Export
-              </button>
+              <div className={styles.buttons}>
+                <button
+                  onClick={() =>
+                    downloadTxt(`export.txt`, joinDataTable(tableArray))
+                  }
+                >
+                  Export to TXT
+                </button>
+                <button onClick={() => handleXmlSave(`export.xml`)}>
+                  Export to XML
+                </button>
+              </div>
             )}
           </div>
           {error && <p className={styles.error}>{error}</p>}

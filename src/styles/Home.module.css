@@ -347,3 +347,9 @@
 .table input:focus + .tooltipwrap .tooltip {
   opacity: 1;
 }
+
+.buttons {
+  display: inline-flex;
+  gap: 10px;
+  flex-direction: row;
+}
