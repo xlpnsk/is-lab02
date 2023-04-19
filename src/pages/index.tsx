@@ -2,17 +2,20 @@ import Head from "next/head";
 import { Roboto } from "next/font/google";
 import styles from "@/styles/Home.module.css";
 import * as React from "react";
-import {
-  downloadTxt,
-  joinDataTable,
-  splitDataToLines,
-  splitLine,
-} from "@/utlis/txt";
+import { downloadTxt, joinDataTable, mapTxt } from "@/utlis/txt";
 import { ICell, IXMLParsedData } from "@/types/globals";
 import { validateCell, validateTxtFileFormat } from "@/utlis/validator";
 import { headers } from "@/utlis/headers";
-import { XMLBuilder, XMLParser } from "fast-xml-parser";
-import { parseXmlToCellData } from "@/utlis/xml";
+import { XMLParser } from "fast-xml-parser";
+import { handleXmlSave, parseXmlToCellData } from "@/utlis/xml";
+import { Row } from "@/components/Row";
+import {
+  compareWithDb,
+  findDuplicates,
+  getDbData,
+  parseDbData,
+  saveDbData,
+} from "@/utlis/db";
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -22,7 +25,24 @@ const roboto = Roboto({
 export default function Home() {
   const [file, setFile] = React.useState<File>();
   const [tableArray, setTableArray] = React.useState<ICell[][]>([]);
+  const [currentDbState, setCurrentDbState] = React.useState<ICell[][]>([]);
   const [error, setError] = React.useState<string | null>(null);
+
+  const duplicates = React.useMemo(
+    () => findDuplicates(tableArray),
+    [tableArray]
+  );
+  const newRecordsCount = React.useMemo(() => {
+    const currentSameAsDb = compareWithDb(tableArray, currentDbState);
+    if (currentSameAsDb) {
+      return 0;
+    } else {
+      return Math.max(
+        0,
+        tableArray.length - currentDbState.length - duplicates.count
+      );
+    }
+  }, [tableArray, currentDbState, duplicates]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -52,47 +72,50 @@ export default function Home() {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const row = parseInt(e.target.getAttribute("data-row") || "");
-    const col = parseInt(e.target.getAttribute("data-col") || "");
-    let tableArrayCopy = [...tableArray];
-    let error = null;
+  const handleInputChange =
+    (row: number) =>
+    (col: number) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      let tableArrayCopy = [...tableArray];
+      let error = null;
 
-    try {
-      validateCell({
+      try {
+        validateCell({
+          value: e.target.value,
+          type: tableArray[row][col].type,
+          error: null,
+        });
+      } catch (err: any) {
+        error = err.message as string;
+      }
+
+      tableArrayCopy[row][col] = {
+        ...tableArray[row][col],
         value: e.target.value,
-        type: tableArray[row][col].type,
-        error: null,
-      });
-    } catch (err: any) {
-      error = err.message as string;
-    }
-
-    tableArrayCopy[row][col] = {
-      ...tableArray[row][col],
-      value: e.target.value,
-      error: error,
+        error: error,
+      };
+      setTableArray(tableArrayCopy);
     };
-    setTableArray(tableArrayCopy);
-  };
 
-  const parseTxt = () => {
+  const handleTxtRead = () => {
     file
       ?.text()
       .then((txt) => {
-        const mappedData = splitDataToLines(txt, "\n").map((line) =>
-          splitLine(line.slice(0, line.length - 1), ";").map((element, idx) => {
-            const cell: ICell = {
-              type: headers[idx],
-              value: element,
-              error: null,
-            };
-            return cell;
-          })
-        );
-        setTableArray(mappedData);
+        const mappedData = mapTxt(txt);
+        setTableArray((tableArray) => [...tableArray, ...mappedData]);
       })
       .catch((err) => console.error(err));
+  };
+
+  const handleDbRead = async () => {
+    try {
+      const dbData = await getDbData();
+      const parsedDbData = parseDbData(dbData.laptops);
+      setTableArray((tableArray) => [...tableArray, ...parsedDbData]);
+      setCurrentDbState(parsedDbData);
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   const handleXmlRead = async () => {
@@ -103,85 +126,22 @@ export default function Home() {
       return;
     }
     const data = parser.parse(fileContent) as IXMLParsedData;
-    setTableArray(parseXmlToCellData(data.laptops.laptop));
+    setTableArray((tableArray) => [
+      ...tableArray,
+      ...parseXmlToCellData(data.laptops.laptop),
+    ]);
   };
 
-  const handleXmlSave = async (fileName: string) => {
-    const options = {
-      ignoreAttributes: false,
-    };
-
-    const currDate = new Date();
-
-    const dateString = `${currDate.getFullYear()}-${(currDate.getMonth() + 1)
-      .toString()
-      .padStart(2, "0")}-${currDate
-      .getDate()
-      .toString()
-      .padStart(2, "0")} T ${currDate
-      .getHours()
-      .toString()
-      .padStart(2, "0")}:${currDate.getMinutes().toString().padStart(2, "0")}`;
-
-    let string = `<laptops moddate="${dateString}">`;
-
-    const builder = new XMLBuilder(options);
-
-    tableArray.forEach((el, i) => {
-      const obj = {
-        laptop: {
-          "@_id": i + 1,
-          manufacturer: el[0].value,
-          screen: {
-            "@_touch": el[4].value === "tak" ? "yes" : "no",
-            size: el[1].value,
-            resolution: el[2].value,
-            type: el[3].value,
-          },
-          processor: {
-            name: el[5].value,
-            physical_cores: el[6].value,
-            clock_speed: el[7].value,
-          },
-          ram: el[8].value,
-          disc: {
-            "@_type": el[10].value,
-            storage: el[9].value,
-          },
-          graphic_card: {
-            name: el[11].value,
-            memory: el[12].value,
-          },
-          os: el[13].value,
-          disc_reader: el[14].value,
-        },
-      };
-
-      const xmlDataStr = builder.build(obj);
-      string += xmlDataStr;
-    });
-
-    string += "</laptops>";
-
-    const anchor = document.createElement("a");
-    const blob = new Blob([string], { type: "text/plain" });
-
-    anchor.setAttribute("href", window.URL.createObjectURL(blob));
-    anchor.setAttribute("download", fileName);
-
-    anchor.dataset.downloadurl = [
-      "text/plain",
-      anchor.download,
-      anchor.href,
-    ].join(":");
-
-    anchor.click();
+  const saveToDb = async () => {
+    const respData = await saveDbData(
+      tableArray.filter((_, idx) => !duplicates.duplicates.includes(idx))
+    );
   };
 
   React.useEffect(() => {
     if (!file) return;
     if (file?.type.includes("text/plain")) {
-      parseTxt();
+      handleTxtRead();
     } else if (
       file?.type.includes("application/xml") ||
       file?.type.includes("text/xml")
@@ -201,7 +161,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Lab03</title>
+        <title>Lab04</title>
         <meta name="description" content="Generated by create next app" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
@@ -210,24 +170,30 @@ export default function Home() {
         <div>
           <div>
             <input type="file" onChange={handleFileChange} />
-            {file && !anyErrors && (
+            <button onClick={handleDbRead}>Import from DB</button>
+            {tableArray && tableArray.length > 0 && !anyErrors && (
               <div className={styles.buttons}>
                 <button
                   onClick={() =>
-                    downloadTxt(`export.txt`, joinDataTable(tableArray))
+                    downloadTxt(joinDataTable(tableArray), `export.txt`)
                   }
                 >
                   Export to TXT
                 </button>
-                <button onClick={() => handleXmlSave(`export.xml`)}>
+                <button onClick={() => handleXmlSave(tableArray, `export.xml`)}>
                   Export to XML
                 </button>
+                <button onClick={saveToDb}>Export to DB</button>
               </div>
             )}
           </div>
           {error && <p className={styles.error}>{error}</p>}
         </div>
-        {file && (
+        <div>
+          <p>Duplicates: {duplicates.count}</p>
+          <p>New records: {newRecordsCount}</p>
+        </div>
+        {tableArray && tableArray.length > 0 && (
           <div className={styles.tabcont}>
             <table className={styles.table}>
               <thead>
@@ -238,35 +204,14 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {tableArray.map((line, row) => {
-                  return (
-                    <tr key={row}>
-                      {line.map((cell, col) => (
-                        <td
-                          key={`${row}-${col}`}
-                          style={{
-                            backgroundColor: cell.error ? "red" : "transparent",
-                          }}
-                        >
-                          <input
-                            type="text"
-                            data-row={row}
-                            data-col={col}
-                            value={cell.value}
-                            onChange={handleInputChange}
-                          />
-                          {cell.error && (
-                            <span className={styles.tooltipwrap}>
-                              <span className={styles.tooltip}>
-                                {cell.error}
-                              </span>
-                            </span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
+                {tableArray.map((line, rowIdx) => (
+                  <Row
+                    key={rowIdx}
+                    values={line}
+                    isDuplicate={duplicates.duplicates.includes(rowIdx)}
+                    onInputChange={handleInputChange(rowIdx)}
+                  />
+                ))}
               </tbody>
             </table>
           </div>

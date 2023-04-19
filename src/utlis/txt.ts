@@ -1,4 +1,5 @@
 import { ICell } from "@/types/globals";
+import { headers } from "./headers";
 
 export const splitDataToLines = (data: string, delimeter: string = "\n") => {
   return data.split(delimeter);
@@ -7,7 +8,7 @@ export const splitLine = (line: string, delimeter: string = ";") => {
   return line.split(delimeter);
 };
 
-export function downloadTxt(filename: string, text: string) {
+export function downloadTxt(text: string, filename: string) {
   const element = document.createElement("a");
   element.setAttribute(
     "href",
@@ -27,4 +28,17 @@ export function joinDataTable(dataTable: ICell[][]): string {
   return dataTable
     .map((line) => `${line.map((cell) => cell.value).join(";")};`)
     .join("\n");
+}
+
+export function mapTxt(txt: string) {
+  return splitDataToLines(txt, "\n").map((line) =>
+    splitLine(line.slice(0, line.length - 1), ";").map((element, idx) => {
+      const cell: ICell = {
+        type: headers[idx],
+        value: element,
+        error: null,
+      };
+      return cell;
+    })
+  );
 }

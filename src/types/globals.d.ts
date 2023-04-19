@@ -52,3 +52,27 @@ export interface IXMLParsedData {
     }[];
   };
 }
+
+export interface IDBData {
+  _id: string;
+  producent: string;
+  diagonal: number;
+  resolution: string;
+  surface: "błyszcząca" | "matowa" | "błyszczący" | "matowy";
+  touchable: boolean;
+  cpu: string;
+  cores: number;
+  mhz: number;
+  ram: string;
+  diskspace: string;
+  disktype: "SSD" | "HDD";
+  gpu: string;
+  gpu_memory: string;
+  os: string;
+  drive: string;
+}
+
+export interface IDbResp {
+  count: number;
+  laptops: IDBData[];
+}

@@ -288,20 +288,16 @@
   padding: 8px;
   position: relative;
 }
+
+.table td {
+  background-color: transparent;
+}
+
 .table td input {
   background-color: transparent;
   outline: none;
   border: none;
   color: inherit;
-}
-.table tr:nth-child(even) {
-  background-color: #3c3c3c;
-  transition: all 0.3s ease;
-}
-
-.table tr:hover {
-  background-color: #c0c0c0;
-  color: black;
 }
 
 .table th {
@@ -352,4 +348,17 @@
   display: inline-flex;
   gap: 10px;
   flex-direction: row;
+}
+
+.changed {
+  background-color: white;
+  color: black;
+}
+
+.duplicate {
+  background-color: red;
+}
+
+.base {
+  background-color: gray;
 }

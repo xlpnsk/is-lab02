@@ -1,4 +1,5 @@
 import { ICell, IXMLParsedData } from "@/types/globals";
+import { XMLBuilder } from "fast-xml-parser";
 
 export const parseXmlToCellData: (
   laptops: IXMLParsedData["laptops"]["laptop"]
@@ -55,4 +56,76 @@ export const parseXmlToCellData: (
     { type: "Drive", value: el.disc_reader, error: null },
   ]);
   return result;
+};
+
+export const handleXmlSave = async (data: ICell[][], fileName: string) => {
+  const options = {
+    ignoreAttributes: false,
+  };
+
+  const currDate = new Date();
+
+  const dateString = `${currDate.getFullYear()}-${(currDate.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${currDate
+    .getDate()
+    .toString()
+    .padStart(2, "0")} T ${currDate
+    .getHours()
+    .toString()
+    .padStart(2, "0")}:${currDate.getMinutes().toString().padStart(2, "0")}`;
+
+  let string = `<laptops moddate="${dateString}">`;
+
+  const builder = new XMLBuilder(options);
+
+  data.forEach((el, i) => {
+    const obj = {
+      laptop: {
+        "@_id": i + 1,
+        manufacturer: el[0].value,
+        screen: {
+          "@_touch": el[4].value === "tak" ? "yes" : "no",
+          size: el[1].value,
+          resolution: el[2].value,
+          type: el[3].value,
+        },
+        processor: {
+          name: el[5].value,
+          physical_cores: el[6].value,
+          clock_speed: el[7].value,
+        },
+        ram: el[8].value,
+        disc: {
+          "@_type": el[10].value,
+          storage: el[9].value,
+        },
+        graphic_card: {
+          name: el[11].value,
+          memory: el[12].value,
+        },
+        os: el[13].value,
+        disc_reader: el[14].value,
+      },
+    };
+
+    const xmlDataStr = builder.build(obj);
+    string += xmlDataStr;
+  });
+
+  string += "</laptops>";
+
+  const anchor = document.createElement("a");
+  const blob = new Blob([string], { type: "text/plain" });
+
+  anchor.setAttribute("href", window.URL.createObjectURL(blob));
+  anchor.setAttribute("download", fileName);
+
+  anchor.dataset.downloadurl = [
+    "text/plain",
+    anchor.download,
+    anchor.href,
+  ].join(":");
+
+  anchor.click();
 };
